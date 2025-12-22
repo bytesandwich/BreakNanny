@@ -1,0 +1,62 @@
+# =========================
+# Xcode
+# =========================
+
+# Build products
+build/
+DerivedData/
+
+# User-specific Xcode files
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+xcuserdata/
+
+# Xcode workspace (user state only)
+*.xcuserstate
+
+# =========================
+# Swift / macOS
+# =========================
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# =========================
+# macOS
+# =========================
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# =========================
+# Logs & temp files
+# =========================
+
+*.log
+*.tmp
+
+# =========================
+# Code signing / local secrets
+# =========================
+
+*.p12
+*.cer
+*.mobileprovision
+
+# =========================
+# Crash reports
+# =========================
+
+*.crash
+
+# =========================
+# Editor / tooling
+# =========================
+
+.vscode/
+.idea/
