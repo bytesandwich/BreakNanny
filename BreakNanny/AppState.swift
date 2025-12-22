@@ -1,0 +1,192 @@
+//
+//  AppState.swift
+//  BreakNanny
+//
+//  Created by John Phelan on 12/22/25.
+//
+
+import Foundation
+import SwiftUI
+
+enum AppPhase {
+    case idle
+    case activeCoding
+    case activeBreak
+}
+
+@Observable
+class AppState {
+    // Current state
+    var phase: AppPhase = .idle
+
+    // Active block being worked on
+    var activeBlock: CodingBlock?
+
+    // Timer state
+    var remainingSeconds: Int = 0
+    private var timer: Timer?
+
+    // Keyboard capture
+    let keyboardCapture = GlobalKeyboardCapture()
+
+    // History of completed blocks
+    var completedBlocks: [CodingBlock] = []
+
+    // Form state for new block
+    var newBlockIntention: String = ""
+    var newBlockCodingDuration: Int = 15 * 60 // 15 minutes default
+    var newBlockBreakDuration: Int = 10 * 60 // 10 minutes default
+
+    // Tracking actual time elapsed
+    private var codingStartTime: Date?
+    private var breakStartTime: Date?
+
+    init() {
+        loadHistory()
+    }
+
+    // MARK: - Actions
+
+    func startCodingBlock() {
+        guard !newBlockIntention.isEmpty else { return }
+
+        let block = CodingBlock(
+            intendedDescription: newBlockIntention,
+            plannedCodingDuration: newBlockCodingDuration,
+            plannedBreakDuration: newBlockBreakDuration
+        )
+
+        activeBlock = block
+        phase = .activeCoding
+        remainingSeconds = newBlockCodingDuration
+        codingStartTime = Date()
+
+        startTimer()
+
+        // Clear form
+        newBlockIntention = ""
+    }
+
+    func transitionToBreak() {
+        guard var block = activeBlock else { return }
+
+        // Calculate actual coding duration
+        if let startTime = codingStartTime {
+            block.actualCodingDuration = Int(Date().timeIntervalSince(startTime))
+        }
+
+        activeBlock = block
+        phase = .activeBreak
+        remainingSeconds = block.plannedBreakDuration
+        breakStartTime = Date()
+
+        // Start keyboard capture for break
+        keyboardCapture.onCharacters = { [weak self] chars, keyCode in
+            DispatchQueue.main.async {
+                self?.handleBreakInput(chars: chars, keyCode: keyCode)
+            }
+        }
+        keyboardCapture.start()
+
+        startTimer()
+    }
+
+    func completeBreak() {
+        guard var block = activeBlock else { return }
+
+        // Calculate actual break duration
+        if let startTime = breakStartTime {
+            block.actualBreakDuration = Int(Date().timeIntervalSince(startTime))
+        }
+
+        // Add to history
+        completedBlocks.insert(block, at: 0)
+        saveHistory()
+
+        // Cleanup
+        keyboardCapture.stop()
+        stopTimer()
+        activeBlock = nil
+        phase = .idle
+        codingStartTime = nil
+        breakStartTime = nil
+    }
+
+    // MARK: - Timer Management
+
+    private func startTimer() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.timerTick()
+        }
+    }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func timerTick() {
+        remainingSeconds -= 1
+
+        if remainingSeconds <= 0 {
+            switch phase {
+            case .activeCoding:
+                transitionToBreak()
+            case .activeBreak:
+                completeBreak()
+            case .idle:
+                break
+            }
+        }
+    }
+
+    // MARK: - Input Handling
+
+    private func handleBreakInput(chars: String, keyCode: CGKeyCode) {
+        guard var block = activeBlock else { return }
+
+        switch keyCode {
+        case 51: // delete
+            if !block.actualDescription.isEmpty {
+                block.actualDescription.removeLast()
+            }
+        case 36: // return key - just add newline
+            block.actualDescription.append("\n")
+        default:
+            if !chars.isEmpty {
+                block.actualDescription.append(chars)
+            }
+        }
+
+        activeBlock = block
+    }
+
+    // MARK: - Persistence
+
+    private func loadHistory() {
+        guard let data = UserDefaults.standard.data(forKey: "completedBlocks"),
+              let blocks = try? JSONDecoder().decode([CodingBlock].self, from: data) else {
+            return
+        }
+        completedBlocks = blocks
+    }
+
+    private func saveHistory() {
+        guard let data = try? JSONEncoder().encode(completedBlocks) else { return }
+        UserDefaults.standard.set(data, forKey: "completedBlocks")
+    }
+
+    // MARK: - Helpers
+
+    func timeString(from seconds: Int) -> String {
+        let minutes = seconds / 60
+        let secs = seconds % 60
+        return String(format: "%02d:%02d", minutes, secs)
+    }
+
+    func durationString(from seconds: Int) -> String {
+        let minutes = seconds / 60
+        return "\(minutes)m"
+    }
+}

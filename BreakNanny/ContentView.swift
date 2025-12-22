@@ -95,93 +95,24 @@ final class GlobalKeyboardCapture {
 }
 
 struct ContentView: View {
-    @State private var isRunning = false
-    @State private var text: String = ""
-    @State private var timer: Timer?
-    @State private var remainingSeconds = 10
-
-    @State private var selectedDurationSeconds = 10 * 60
-    @State private var keyboardCapture = GlobalKeyboardCapture()
-
-    private let availableDurations: [Int] = [
-        3,
-        5 * 60,
-        10 * 60,
-        15 * 60,
-        25 * 60
-    ]
+    @State private var appState = AppState()
 
     var body: some View {
-        VStack(spacing: 12) {
-            TextField("Type anything…", text: $text)
-                .textFieldStyle(.roundedBorder)
-                .disabled(!isRunning)
-                .focusable(isRunning)
-                .frame(minWidth: 200)
+        ScrollView {
+            VStack(spacing: 16) {
+                // Primary Coding Block Area
+                PrimaryBlockView(appState: appState)
 
-            if isRunning {
-                Text(timeString(from: remainingSeconds))
-                    .font(.system(.title, design: .monospaced))
-            } else {
-                Picker("Duration", selection: $selectedDurationSeconds) {
-                    ForEach(availableDurations, id: \.self) { seconds in
-                        if seconds < 60 {
-                            Text("\(seconds) sec").tag(seconds)
-                        } else {
-                            Text("\(seconds / 60) min").tag(seconds)
-                        }
-                    }
-                }
-                .pickerStyle(.segmented)
+                Divider()
+                    .padding(.horizontal)
 
-                Button("Start") {
-                    startTimer()
-                }
+                // History List
+                HistoryListView(completedBlocks: appState.completedBlocks)
             }
+            .padding()
         }
-        .padding()
-        .frame(minWidth: 240)
-    }
-
-    private func startTimer() {
-        isRunning = true
-
-        keyboardCapture.onCharacters = { chars, keyCode in
-            DispatchQueue.main.async {
-                switch keyCode {
-                case 51: // delete
-                    if !text.isEmpty { text.removeLast() }
-                default:
-                    text.append(chars)
-                }
-            }
-        }
-        keyboardCapture.start()
-
-        remainingSeconds = selectedDurationSeconds
-        text = ""
-
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            remainingSeconds -= 1
-            if remainingSeconds <= 0 {
-                stopTimer()
-            }
-        }
-    }
-
-    private func stopTimer() {
-        keyboardCapture.stop()
-
-        timer?.invalidate()
-        timer = nil
-        isRunning = false
-    }
-
-    private func timeString(from seconds: Int) -> String {
-        let minutes = seconds / 60
-        let seconds = seconds % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+        .frame(minWidth: 600, minHeight: 500)
+        .background(Color(white: 0.08))
     }
 }
 
