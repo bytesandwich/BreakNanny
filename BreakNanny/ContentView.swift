@@ -8,32 +8,62 @@
 import SwiftUI
 import ApplicationServices
 
-final class InputEventTapLock {
+final class GlobalKeyboardCapture {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    var onCharacters: ((String, CGKeyCode) -> Void)?
 
     func start() {
         guard eventTap == nil else { return }
 
         let mask =
-            (1 << CGEventType.keyDown.rawValue) |
-            (1 << CGEventType.keyUp.rawValue) |
-            (1 << CGEventType.leftMouseDown.rawValue) |
-            (1 << CGEventType.leftMouseUp.rawValue) |
-            (1 << CGEventType.rightMouseDown.rawValue) |
-            (1 << CGEventType.rightMouseUp.rawValue) |
-            (1 << CGEventType.otherMouseDown.rawValue) |
-            (1 << CGEventType.otherMouseUp.rawValue) |
-            (1 << CGEventType.mouseMoved.rawValue) |
-            (1 << CGEventType.leftMouseDragged.rawValue) |
-            (1 << CGEventType.rightMouseDragged.rawValue) |
-            (1 << CGEventType.otherMouseDragged.rawValue) |
-            (1 << CGEventType.scrollWheel.rawValue)
+            (CGEventMask(1) << CGEventType.keyDown.rawValue) |
+            (CGEventMask(1) << CGEventType.keyUp.rawValue) |
+            (CGEventMask(1) << CGEventType.leftMouseDown.rawValue) |
+            (CGEventMask(1) << CGEventType.leftMouseUp.rawValue) |
+            (CGEventMask(1) << CGEventType.rightMouseDown.rawValue) |
+            (CGEventMask(1) << CGEventType.rightMouseUp.rawValue) |
+            (CGEventMask(1) << CGEventType.otherMouseDown.rawValue) |
+            (CGEventMask(1) << CGEventType.otherMouseUp.rawValue) |
+            (CGEventMask(1) << CGEventType.mouseMoved.rawValue) |
+            (CGEventMask(1) << CGEventType.leftMouseDragged.rawValue) |
+            (CGEventMask(1) << CGEventType.rightMouseDragged.rawValue) |
+            (CGEventMask(1) << CGEventType.otherMouseDragged.rawValue) |
+            (CGEventMask(1) << CGEventType.scrollWheel.rawValue)
 
-        let callback: CGEventTapCallBack = { _, type, event, _ in
-            // Drop all keyboard and mouse events
+        let callback: CGEventTapCallBack = { _, type, event, refcon in
+            guard let refcon else { return nil }
+
+            // Only process characters for keyDown; all other events are swallowed
+            if type != .keyDown {
+                return nil
+            }
+
+            let capture = Unmanaged<GlobalKeyboardCapture>
+                .fromOpaque(refcon)
+                .takeUnretainedValue()
+
+            // Extract keycode
+            let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+
+            // Extract Unicode text (if any) from the keyDown event
+            var buffer = [UniChar](repeating: 0, count: 8)
+            var actualLength: Int = 0
+            event.keyboardGetUnicodeString(maxStringLength: buffer.count, actualStringLength: &actualLength, unicodeString: &buffer)
+
+            if actualLength > 0 {
+                let s = String(utf16CodeUnits: buffer, count: actualLength)
+                capture.onCharacters?(s, keyCode)
+            } else {
+                // Still forward non-character keys (arrows, etc.) with empty string
+                capture.onCharacters?("", keyCode)
+            }
+
+            // Swallow all key events while running
             return nil
         }
+
+        let refcon = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -41,54 +71,37 @@ final class InputEventTapLock {
             options: .defaultTap,
             eventsOfInterest: CGEventMask(mask),
             callback: callback,
-            userInfo: nil
+            userInfo: refcon
         ) else {
-            print("Failed to create keyboard event tap")
             return
         }
 
         eventTap = tap
-        runLoopSource = CFMachPortCreateRunLoopSource(
-            kCFAllocatorDefault,
-            tap,
-            0
-        )
-
-        CFRunLoopAddSource(
-            CFRunLoopGetCurrent(),
-            runLoopSource,
-            .commonModes
-        )
-
+        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        print("Keyboard + mouse event tap enabled")
     }
 
     func stop() {
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(
-                CFRunLoopGetCurrent(),
-                source,
-                .commonModes
-            )
-        }
-
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
-
+        if let src = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), src, .commonModes)
+        }
         runLoopSource = nil
         eventTap = nil
-        print("Keyboard + mouse event tap disabled")
     }
 }
 
 struct ContentView: View {
     @State private var isRunning = false
-    @State private var selectedDurationSeconds = 10 * 60
-    @State private var remainingSeconds = 10 * 60
+    @State private var text: String = ""
     @State private var timer: Timer?
-    @State private var keyboardLock = InputEventTapLock()
+    @State private var remainingSeconds = 10
+
+    @State private var selectedDurationSeconds = 10 * 60
+    @State private var keyboardCapture = GlobalKeyboardCapture()
 
     private let availableDurations: [Int] = [
         3,
@@ -100,6 +113,12 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            TextField("Type anything…", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .disabled(!isRunning)
+                .focusable(isRunning)
+                .frame(minWidth: 200)
+
             if isRunning {
                 Text(timeString(from: remainingSeconds))
                     .font(.system(.title, design: .monospaced))
@@ -115,19 +134,32 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
 
-                Button("Start break") {
+                Button("Start") {
                     startTimer()
                 }
             }
         }
         .padding()
-        .frame(minWidth: 220)
+        .frame(minWidth: 240)
     }
 
     private func startTimer() {
-        keyboardLock.start()
         isRunning = true
+
+        keyboardCapture.onCharacters = { chars, keyCode in
+            DispatchQueue.main.async {
+                switch keyCode {
+                case 51: // delete
+                    if !text.isEmpty { text.removeLast() }
+                default:
+                    text.append(chars)
+                }
+            }
+        }
+        keyboardCapture.start()
+
         remainingSeconds = selectedDurationSeconds
+        text = ""
 
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
@@ -139,7 +171,8 @@ struct ContentView: View {
     }
 
     private func stopTimer() {
-        keyboardLock.stop()
+        keyboardCapture.stop()
+
         timer?.invalidate()
         timer = nil
         isRunning = false
