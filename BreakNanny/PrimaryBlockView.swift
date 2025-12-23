@@ -63,5 +63,8 @@ struct PrimaryBlockView: View {
                 }
             }
         }
+        .onAppear {
+            appState.startInitialFocusEnforcement()
+        }
     }
 }

@@ -94,6 +94,83 @@ final class GlobalKeyboardCapture {
     }
 }
 
+
+final class FocusEnforcer {
+    private var isRunning = false
+    private var activationObserver: Any?
+    private var activationScheduled = false
+
+    private func log(_ message: String) {
+        print("[FocusEnforcer] \(message)")
+    }
+
+    func start() {
+        guard !isRunning else { return }
+        isRunning = true
+        log("start() called")
+
+        scheduleActivate(reason: "start()")
+
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self, self.isRunning else { return }
+
+            // IMPORTANT: ignore our own activation events
+            if let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+               app.bundleIdentifier == Bundle.main.bundleIdentifier {
+                self.log("didActivateApplicationNotification: self-activation (ignored)")
+                return
+            }
+
+            self.log("didActivateApplicationNotification: other app activated -> reassert")
+            self.scheduleActivate(reason: "workspace didActivate other app")
+        }
+    }
+
+    func stop() {
+        log("stop() called")
+        isRunning = false
+
+        if let activationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
+            self.activationObserver = nil
+        }
+    }
+
+    private func scheduleActivate(reason: String) {
+        guard !activationScheduled else {
+            log("scheduleActivate(\(reason)): already scheduled")
+            return
+        }
+
+        activationScheduled = true
+        log("scheduleActivate(\(reason))")
+
+        // Use a tiny delay to get out of the current layout/update pass
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self else { return }
+            self.activationScheduled = false
+            self.forceActivate()
+        }
+    }
+
+    private func forceActivate() {
+        log("forceActivate()")
+        log("isActive before: \(NSApp.isActive)")
+        log("keyWindow before: \(String(describing: NSApp.keyWindow))")
+
+        NSApp.activate(ignoringOtherApps: true)
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
+
+        log("activation calls issued")
+        log("isActive after: \(NSApp.isActive)")
+        log("keyWindow after: \(String(describing: NSApp.keyWindow))")
+    }
+}
+
 struct ContentView: View {
     @Bindable var appState: AppState
     @State private var showingClearConfirmation = false

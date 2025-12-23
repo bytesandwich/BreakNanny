@@ -33,6 +33,7 @@ class AppState {
 
     // Keyboard capture
     let keyboardCapture = GlobalKeyboardCapture()
+    let focusEnforcer = FocusEnforcer()
 
     // History of completed blocks
     var completedBlocks: [CodingBlock] = []
@@ -55,7 +56,12 @@ class AppState {
 
     // MARK: - Actions
 
+    func startInitialFocusEnforcement() {
+        focusEnforcer.start()
+    }
+    
     func startCodingBlock() {
+        focusEnforcer.stop()
         guard !newBlockIntention.isEmpty else { return }
 
         let block = CodingBlock(
@@ -125,6 +131,7 @@ class AppState {
         phase = .idle
         codingStartTime = nil
         breakStartTime = nil
+        focusEnforcer.start()
     }
 
     // MARK: - Timer Management
