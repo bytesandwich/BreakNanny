@@ -95,7 +95,8 @@ final class GlobalKeyboardCapture {
 }
 
 struct ContentView: View {
-    @State private var appState = AppState()
+    @Bindable var appState: AppState
+    @State private var showingClearConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -108,14 +109,32 @@ struct ContentView: View {
 
                 // History List
                 HistoryListView(completedBlocks: appState.completedBlocks)
+
+                // Clear History Button
+                if !appState.completedBlocks.isEmpty {
+                    HStack {
+                        Spacer()
+                        Button("Clear History") {
+                            showingClearConfirmation = true
+                        }
+                        .buttonStyle(.bordered)
+                        .foregroundColor(.red)
+                    }
+                    .padding(.top, 8)
+                }
             }
             .padding()
+            .textSelection(.enabled)
         }
         .frame(minWidth: 600, minHeight: 500)
         .background(Color(white: 0.08))
+        .alert("Clear History?", isPresented: $showingClearConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Clear", role: .destructive) {
+                appState.clearHistory()
+            }
+        } message: {
+            Text("This will permanently delete all completed coding blocks.")
+        }
     }
-}
-
-#Preview {
-    ContentView()
 }

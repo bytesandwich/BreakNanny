@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import AppKit
 
 enum AppPhase {
     case idle
@@ -17,13 +18,17 @@ enum AppPhase {
 @Observable
 class AppState {
     // Current state
-    var phase: AppPhase = .idle
+    var phase: AppPhase = .idle {
+        didSet { statusBarController?.updateStatusBar() }
+    }
 
     // Active block being worked on
     var activeBlock: CodingBlock?
 
     // Timer state
-    var remainingSeconds: Int = 0
+    var remainingSeconds: Int = 0 {
+        didSet { statusBarController?.updateStatusBar() }
+    }
     private var timer: Timer?
 
     // Keyboard capture
@@ -40,6 +45,9 @@ class AppState {
     // Tracking actual time elapsed
     private var codingStartTime: Date?
     private var breakStartTime: Date?
+
+    // Status bar controller reference
+    weak var statusBarController: StatusBarController?
 
     init() {
         loadHistory()
@@ -80,6 +88,10 @@ class AppState {
         remainingSeconds = block.plannedBreakDuration
         breakStartTime = Date()
 
+        // CRITICAL: Bring window to foreground before starting keyboard capture
+        NotificationCenter.default.post(name: .openMainWindow, object: nil)
+        NSApp.activate(ignoringOtherApps: true)
+
         // Start keyboard capture for break
         keyboardCapture.onCharacters = { [weak self] chars, keyCode in
             DispatchQueue.main.async {
@@ -98,6 +110,9 @@ class AppState {
         if let startTime = breakStartTime {
             block.actualBreakDuration = Int(Date().timeIntervalSince(startTime))
         }
+
+        // Set completion timestamp
+        block.completedAt = Date()
 
         // Add to history
         completedBlocks.insert(block, at: 0)
@@ -175,6 +190,11 @@ class AppState {
     private func saveHistory() {
         guard let data = try? JSONEncoder().encode(completedBlocks) else { return }
         UserDefaults.standard.set(data, forKey: "completedBlocks")
+    }
+
+    func clearHistory() {
+        completedBlocks = []
+        UserDefaults.standard.removeObject(forKey: "completedBlocks")
     }
 
     // MARK: - Helpers

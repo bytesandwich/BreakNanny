@@ -42,6 +42,11 @@ struct CodingBlockCard: View {
                         TextField("", text: $formIntention)
                             .textFieldStyle(.plain)
                             .foregroundColor(userTextColor)
+                            .onSubmit {
+                                if !formIntention.isEmpty {
+                                    onStart?()
+                                }
+                            }
                     }
                 default:
                     Text(block?.intendedDescription ?? "")
@@ -53,6 +58,7 @@ struct CodingBlockCard: View {
                     switch mode {
                     case .form:
                         Picker("", selection: $formCodingDuration) {
+                            Text("1m").tag(1 * 60)
                             Text("10m").tag(10 * 60)
                             Text("15m").tag(15 * 60)
                             Text("20m").tag(20 * 60)
@@ -82,11 +88,11 @@ struct CodingBlockCard: View {
             // Divider with vertical padding
             VStack(spacing: 0) {
                 Spacer()
-                    .frame(height: 12)
+                    .frame(height: 3)
                 Divider()
                     .background(systemTextColor.opacity(0.3))
                 Spacer()
-                    .frame(height: 12)
+                    .frame(height: 3)
             }
             .padding(.horizontal, 12)
 
@@ -125,6 +131,7 @@ struct CodingBlockCard: View {
                     switch mode {
                     case .form:
                         Picker("", selection: $formBreakDuration) {
+                            Text("1m").tag(1 * 60)
                             Text("5m").tag(5 * 60)
                             Text("10m").tag(10 * 60)
                         }

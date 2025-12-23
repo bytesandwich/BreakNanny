@@ -15,6 +15,7 @@ struct CodingBlock: Identifiable, Codable {
     let plannedBreakDuration: Int // in seconds
     var actualCodingDuration: Int // in seconds
     var actualBreakDuration: Int // in seconds
+    var completedAt: Date? // when the block was completed
 
     init(
         id: UUID = UUID(),
@@ -23,7 +24,8 @@ struct CodingBlock: Identifiable, Codable {
         plannedCodingDuration: Int,
         plannedBreakDuration: Int,
         actualCodingDuration: Int = 0,
-        actualBreakDuration: Int = 0
+        actualBreakDuration: Int = 0,
+        completedAt: Date? = nil
     ) {
         self.id = id
         self.intendedDescription = intendedDescription
@@ -32,5 +34,6 @@ struct CodingBlock: Identifiable, Codable {
         self.plannedBreakDuration = plannedBreakDuration
         self.actualCodingDuration = actualCodingDuration
         self.actualBreakDuration = actualBreakDuration
+        self.completedAt = completedAt
     }
 }
