@@ -40,8 +40,8 @@ class AppState {
 
     // Form state for new block
     var newBlockIntention: String = ""
-    var newBlockCodingDuration: Int = 15 * 60 // 15 minutes default
-    var newBlockBreakDuration: Int = 10 * 60 // 10 minutes default
+    var newBlockCodingDuration: Int = 25 * 60 // 25 minutes default
+    var newBlockBreakDuration: Int = 5 * 60 // 5 minutes default
 
     // Tracking actual time elapsed
     private var codingStartTime: Date?
