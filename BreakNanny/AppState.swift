@@ -40,6 +40,7 @@ class AppState {
 
     // Form state for new block
     var newBlockIntention: String = ""
+    var newBlockPreCodeExercisesCompleted: Bool = false
     var newBlockCodingDuration: Int = 25 * 60 // 25 minutes default
     var newBlockBreakDuration: Int = 5 * 60 // 5 minutes default
 
@@ -62,7 +63,7 @@ class AppState {
     
     func startCodingBlock() {
         focusEnforcer.stop()
-        guard !newBlockIntention.isEmpty else { return }
+        guard !newBlockIntention.isEmpty && newBlockPreCodeExercisesCompleted else { return }
 
         let block = CodingBlock(
             intendedDescription: newBlockIntention,
@@ -79,6 +80,7 @@ class AppState {
 
         // Clear form
         newBlockIntention = ""
+        newBlockPreCodeExercisesCompleted = false
     }
 
     func transitionToBreak() {

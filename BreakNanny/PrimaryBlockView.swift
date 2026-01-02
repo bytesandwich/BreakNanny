@@ -18,6 +18,7 @@ struct PrimaryBlockView: View {
                     mode: .form,
                     block: .constant(nil),
                     formIntention: $appState.newBlockIntention,
+                    formPreCodeExercisesCompleted: $appState.newBlockPreCodeExercisesCompleted,
                     formCodingDuration: $appState.newBlockCodingDuration,
                     formBreakDuration: $appState.newBlockBreakDuration,
                     onStart: {
@@ -31,6 +32,7 @@ struct PrimaryBlockView: View {
                         mode: .activeCoding,
                         block: $appState.activeBlock,
                         formIntention: .constant(""),
+                        formPreCodeExercisesCompleted: .constant(false),
                         formCodingDuration: .constant(15 * 60),
                         formBreakDuration: .constant(10 * 60),
                         remainingTime: appState.timeString(from: appState.remainingSeconds)
@@ -51,6 +53,7 @@ struct PrimaryBlockView: View {
                         mode: .activeBreak,
                         block: $appState.activeBlock,
                         formIntention: .constant(""),
+                        formPreCodeExercisesCompleted: .constant(false),
                         formCodingDuration: .constant(15 * 60),
                         formBreakDuration: .constant(10 * 60),
                         remainingTime: appState.timeString(from: appState.remainingSeconds)
