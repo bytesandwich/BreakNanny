@@ -261,4 +261,20 @@ class AppState {
         let minutes = seconds / 60
         return "\(minutes)m"
     }
-}
+    
+    func dayTotalMinutes() -> (active: Int, total: Int) {
+        let calendar = Calendar.current
+        let today = Date()
+
+        let todaysBlocks = completedBlocks.filter { block in
+            guard let completedAt = block.completedAt else { return false }
+            return calendar.isDate(completedAt, inSameDayAs: today)
+        }
+
+        let totals = todaysBlocks.reduce(into: (active: 0, total: 0)) { acc, block in
+            acc.active += block.totalActiveMinutes
+            acc.total += block.totalMinutes
+        }
+
+        return totals
+    }}

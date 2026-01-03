@@ -49,6 +49,8 @@ class StatusBarController {
         guard let appState = appState else { return }
 
         let title: String
+        
+        let (activeMinutes, totalMinutes) = appState.dayTotalMinutes()
 
         switch appState.phase {
         case .idle:
@@ -70,7 +72,7 @@ class StatusBarController {
         }
 
         if let button = statusItem?.button {
-            button.title = title
+            button.title = "\(title) | Active \(activeMinutes)m : Total \(totalMinutes)m"
         }
     }
 
