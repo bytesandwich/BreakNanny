@@ -62,6 +62,7 @@ struct CodingBlockCard: View {
                     switch mode {
                     case .form:
                         Picker("", selection: $formCodingDuration) {
+                            Text("2m").tag(2 * 60)
                             Text("25m").tag(25 * 60)
                             Text("45m").tag(45 * 60)
                         }
@@ -69,7 +70,9 @@ struct CodingBlockCard: View {
                         .labelsHidden()
                         .onChange(of: formCodingDuration) { oldValue, newValue in
                             // Link coding duration to break duration
-                            if newValue == 25 * 60 {
+                            if newValue == 2 * 60 {
+                                formBreakDuration = 5
+                            } else if newValue == 25 * 60 {
                                 formBreakDuration = 5 * 60
                             } else if newValue == 45 * 60 {
                                 formBreakDuration = 10 * 60
@@ -141,6 +144,7 @@ struct CodingBlockCard: View {
                     switch mode {
                     case .form:
                         Picker("", selection: $formBreakDuration) {
+                            Text("5s").tag(5)
                             Text("5m").tag(5 * 60)
                             Text("10m").tag(10 * 60)
                         }
@@ -148,7 +152,9 @@ struct CodingBlockCard: View {
                         .labelsHidden()
                         .onChange(of: formBreakDuration) { oldValue, newValue in
                             // Link break duration to coding duration
-                            if newValue == 5 * 60 {
+                            if newValue == 5 {
+                                formCodingDuration = 2 * 60
+                            } else if newValue == 5 * 60 {
                                 formCodingDuration = 25 * 60
                             } else if newValue == 10 * 60 {
                                 formCodingDuration = 45 * 60
