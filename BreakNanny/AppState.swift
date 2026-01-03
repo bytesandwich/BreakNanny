@@ -273,7 +273,8 @@ class AppState {
 
         let totals = todaysBlocks.reduce(into: (active: 0, total: 0)) { acc, block in
             acc.active += block.totalActiveMinutes
-            acc.total += block.totalMinutes
+            acc.total += block.actualCodingDuration
+            acc.total += block.actualBreakDuration
         }
 
         return totals
