@@ -7,6 +7,12 @@
 
 import Foundation
 
+struct AppActivity: Identifiable, Codable {
+    var id: String { appName }
+    let appName: String
+    let activeMinutes: Int
+}
+
 struct CodingBlock: Identifiable, Codable {
     let id: UUID
     let intendedDescription: String
@@ -17,6 +23,11 @@ struct CodingBlock: Identifiable, Codable {
     var actualBreakDuration: Int // in seconds
     var completedAt: Date? // when the block was completed
 
+    // Activity tracking
+    var appActivity: [AppActivity] = []  // Top apps sorted by minutes desc
+    var totalActiveMinutes: Int = 0
+    var totalMinutes: Int = 0
+
     init(
         id: UUID = UUID(),
         intendedDescription: String,
@@ -25,7 +36,10 @@ struct CodingBlock: Identifiable, Codable {
         plannedBreakDuration: Int,
         actualCodingDuration: Int = 0,
         actualBreakDuration: Int = 0,
-        completedAt: Date? = nil
+        completedAt: Date? = nil,
+        appActivity: [AppActivity] = [],
+        totalActiveMinutes: Int = 0,
+        totalMinutes: Int = 0
     ) {
         self.id = id
         self.intendedDescription = intendedDescription
@@ -35,5 +49,8 @@ struct CodingBlock: Identifiable, Codable {
         self.actualCodingDuration = actualCodingDuration
         self.actualBreakDuration = actualBreakDuration
         self.completedAt = completedAt
+        self.appActivity = appActivity
+        self.totalActiveMinutes = totalActiveMinutes
+        self.totalMinutes = totalMinutes
     }
 }

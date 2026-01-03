@@ -7,6 +7,29 @@
 
 import SwiftUI
 
+struct ActivityTable: View {
+    let activities: [AppActivity]
+    let totalActiveMinutes: Int
+
+    var body: some View {
+        Table(activities) {
+            TableColumn("App") { activity in
+                Text(activity.appName)
+                    .lineLimit(1)
+            }
+            TableColumn("Min") { activity in
+                Text("\(activity.activeMinutes)")
+            }
+            .width(40)
+            TableColumn("%") { activity in
+                let pct = totalActiveMinutes > 0 ? (activity.activeMinutes * 100) / totalActiveMinutes : 0
+                Text("\(pct)%")
+            }
+            .width(40)
+        }
+    }
+}
+
 struct HistoryListView: View {
     let completedBlocks: [CodingBlock]
 
@@ -24,11 +47,23 @@ struct HistoryListView: View {
         } else {
             VStack(spacing: 12) {
                 ForEach(completedBlocks) { block in
-                    VStack(spacing: 0) {
+                    HStack(alignment: .top, spacing: 16) {
+                        // Left: existing text content
                         buildBlockText(for: block)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
+
+                        // Right: activity table (if has data) - 50% width
+                        if !block.appActivity.isEmpty {
+                            let rowCount = min(block.appActivity.count, 5)
+                            let tableHeight = CGFloat(28 + rowCount * 24)  // header + rows
+                            ActivityTable(
+                                activities: Array(block.appActivity.prefix(5)),
+                                totalActiveMinutes: block.totalActiveMinutes
+                            )
+                            .frame(maxWidth: .infinity, minHeight: tableHeight, maxHeight: tableHeight)
+                        }
                     }
+                    .padding(12)
                     .background(cardBackgroundColor)
                     .cornerRadius(8)
                 }

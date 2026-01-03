@@ -76,6 +76,10 @@ class AppState {
         remainingSeconds = newBlockCodingDuration
         codingStartTime = Date()
 
+        // Start activity tracking for coding session
+        keyboardCapture.startObserveOnly()
+        focusEnforcer.startOnlyTrackActiveApp()
+
         startTimer()
 
         // Clear form
@@ -89,7 +93,27 @@ class AppState {
         // Calculate actual coding duration
         if let startTime = codingStartTime {
             block.actualCodingDuration = Int(Date().timeIntervalSince(startTime))
+
+            // Capture activity data into the block
+            let totalMinutes = Int(Date().timeIntervalSince(startTime) / 60)
+            let summaries = ActivityReviewer.calculateActivity(
+                appActivations: focusEnforcer.appActivations,
+                activeMinutes: keyboardCapture.activeMinutes,
+                codingStartTime: startTime
+            )
+
+            // Convert to AppActivity and sort by minutes descending
+            block.appActivity = summaries
+                .sorted { $0.activeMinutes > $1.activeMinutes }
+                .map { AppActivity(appName: $0.appName, activeMinutes: $0.activeMinutes) }
+            block.totalActiveMinutes = keyboardCapture.activeMinutes.count
+            block.totalMinutes = totalMinutes
         }
+
+        // Stop activity tracking and emit summary
+        emitCodingActivitySummary()
+        keyboardCapture.stopObserveOnly()
+        focusEnforcer.stopOnlyTrackActiveApp()
 
         activeBlock = block
         phase = .activeBreak
@@ -106,9 +130,25 @@ class AppState {
                 self?.handleBreakInput(chars: chars, keyCode: keyCode)
             }
         }
-        keyboardCapture.start()
+        keyboardCapture.startBreakLogCapture()
+
+        // Start focus enforcement for break
+        focusEnforcer.startEnforceAppFocus()
 
         startTimer()
+    }
+
+    private func emitCodingActivitySummary() {
+        guard let startTime = codingStartTime else { return }
+
+        let totalMinutes = Int(Date().timeIntervalSince(startTime) / 60)
+
+        ActivityReviewer.printSummary(
+            appActivations: focusEnforcer.appActivations,
+            activeMinutes: keyboardCapture.activeMinutes,
+            codingStartTime: startTime,
+            totalMinutes: totalMinutes
+        )
     }
 
     func completeBreak() {
@@ -127,13 +167,16 @@ class AppState {
         saveHistory()
 
         // Cleanup
-        keyboardCapture.stop()
+        keyboardCapture.stopBreakLogCapture()
+        focusEnforcer.stopEnforceAppFocus()
         stopTimer()
         activeBlock = nil
         phase = .idle
         codingStartTime = nil
         breakStartTime = nil
-        focusEnforcer.start()
+
+        // Return to idle mode with focus enforcement
+        focusEnforcer.startEnforceAppFocus()
     }
 
     // MARK: - Timer Management

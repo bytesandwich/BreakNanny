@@ -8,12 +8,112 @@
 import SwiftUI
 import ApplicationServices
 
+enum KeyboardCaptureMode {
+    case observeOnly
+    case breakLogCapture
+    case off
+}
+
 final class GlobalKeyboardCapture {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     var onCharacters: ((String, CGKeyCode) -> Void)?
 
-    func start() {
+    // Mode-based behavior
+    private(set) var mode: KeyboardCaptureMode = .off
+
+    // Track minutes with activity (for observeOnly mode)
+    private(set) var activeMinutes: Set<Int> = []  // Minutes since coding started
+    private var observeStartTime: Date?
+
+    // MARK: - ObserveOnly Mode
+
+    private func log(_ message: String) {
+        print("[KeyboardCapture] \(message)")
+    }
+
+    func startObserveOnly() {
+        guard mode == .off else { return }
+        mode = .observeOnly
+        activeMinutes = []
+        observeStartTime = Date()
+        log("startObserveOnly() - observeStartTime: \(observeStartTime!)")
+        startListenOnlyTap()
+    }
+
+    func stopObserveOnly() {
+        guard mode == .observeOnly else { return }
+        log("stopObserveOnly() - activeMinutes: \(activeMinutes.sorted())")
+        stopTap()
+        mode = .off
+    }
+
+    private func startListenOnlyTap() {
+        guard eventTap == nil else { return }
+
+        let mask =
+            (CGEventMask(1) << CGEventType.keyDown.rawValue) |
+            (CGEventMask(1) << CGEventType.leftMouseDown.rawValue) |
+            (CGEventMask(1) << CGEventType.rightMouseDown.rawValue) |
+            (CGEventMask(1) << CGEventType.otherMouseDown.rawValue) |
+            (CGEventMask(1) << CGEventType.scrollWheel.rawValue)
+
+        let callback: CGEventTapCallBack = { _, type, event, refcon in
+            guard let refcon else { return Unmanaged.passUnretained(event) }
+
+            let capture = Unmanaged<GlobalKeyboardCapture>
+                .fromOpaque(refcon)
+                .takeUnretainedValue()
+
+            // Record activity for this minute
+            if let startTime = capture.observeStartTime {
+                let secondsSinceStart = Date().timeIntervalSince(startTime)
+                let minutesSinceStart = Int(secondsSinceStart / 60)
+                let isNew = !capture.activeMinutes.contains(minutesSinceStart)
+                capture.activeMinutes.insert(minutesSinceStart)
+                if isNew {
+                    print("[KeyboardCapture] Activity detected at \(String(format: "%.1f", secondsSinceStart))s -> minute \(minutesSinceStart), total active: \(capture.activeMinutes.count)")
+                }
+            }
+
+            // Pass event through (listen-only)
+            return Unmanaged.passUnretained(event)
+        }
+
+        let refcon = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,
+            eventsOfInterest: CGEventMask(mask),
+            callback: callback,
+            userInfo: refcon
+        ) else {
+            return
+        }
+
+        eventTap = tap
+        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+    }
+
+    // MARK: - BreakLogCapture Mode (original behavior)
+
+    func startBreakLogCapture() {
+        guard mode == .off else { return }
+        mode = .breakLogCapture
+        startBreakLogCaptureTap()
+    }
+
+    func stopBreakLogCapture() {
+        guard mode == .breakLogCapture else { return }
+        stopTap()
+        mode = .off
+    }
+
+    private func startBreakLogCaptureTap() {
         guard eventTap == nil else { return }
 
         let mask =
@@ -82,7 +182,9 @@ final class GlobalKeyboardCapture {
         CGEvent.tapEnable(tap: tap, enable: true)
     }
 
-    func stop() {
+    // MARK: - Common Tap Management
+
+    private func stopTap() {
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
@@ -92,31 +194,98 @@ final class GlobalKeyboardCapture {
         runLoopSource = nil
         eventTap = nil
     }
+
+    // Legacy compatibility - maps to breakLogCapture
+    func start() {
+        startBreakLogCapture()
+    }
+
+    func stop() {
+        stopBreakLogCapture()
+    }
 }
 
 
+enum FocusEnforcementMode {
+    case onlyTrackActiveApp
+    case enforceAppFocus
+    case off
+}
+
+struct AppActivationEvent {
+    let appName: String
+    let timestamp: Date
+}
+
 final class FocusEnforcer {
-    private var isRunning = false
     private var activationObserver: Any?
     private var activationScheduled = false
+
+    // Mode-based behavior
+    private(set) var mode: FocusEnforcementMode = .off
+
+    // Track app activations (for onlyTrackActiveApp mode)
+    private(set) var appActivations: [AppActivationEvent] = []
 
     private func log(_ message: String) {
         print("[FocusEnforcer] \(message)")
     }
 
-    func start() {
-        guard !isRunning else { return }
-        isRunning = true
-        log("start() called")
+    // MARK: - OnlyTrackActiveApp Mode
 
-        scheduleActivate(reason: "start()")
+    func startOnlyTrackActiveApp() {
+        guard mode == .off else { return }
+        mode = .onlyTrackActiveApp
+        appActivations = []
+        log("startOnlyTrackActiveApp() called")
+
+        // Record the currently active app
+        if let frontApp = NSWorkspace.shared.frontmostApplication {
+            let appName = normalizedAppName(from: frontApp)
+            appActivations.append(AppActivationEvent(appName: appName, timestamp: Date()))
+        }
 
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
         ) { [weak self] note in
-            guard let self, self.isRunning else { return }
+            guard let self, self.mode == .onlyTrackActiveApp else { return }
+
+            if let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+                let appName = self.normalizedAppName(from: app)
+                self.appActivations.append(AppActivationEvent(appName: appName, timestamp: Date()))
+                self.log("App activated: \(appName)")
+            }
+        }
+    }
+
+    func stopOnlyTrackActiveApp() {
+        guard mode == .onlyTrackActiveApp else { return }
+        log("stopOnlyTrackActiveApp() called")
+
+        if let activationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
+            self.activationObserver = nil
+        }
+        mode = .off
+    }
+
+    // MARK: - EnforceAppFocus Mode (original behavior)
+
+    func startEnforceAppFocus() {
+        guard mode == .off else { return }
+        mode = .enforceAppFocus
+        log("startEnforceAppFocus() called")
+
+        scheduleActivate(reason: "startEnforceAppFocus()")
+
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self, self.mode == .enforceAppFocus else { return }
 
             // IMPORTANT: ignore our own activation events
             if let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
@@ -130,14 +299,31 @@ final class FocusEnforcer {
         }
     }
 
-    func stop() {
-        log("stop() called")
-        isRunning = false
+    func stopEnforceAppFocus() {
+        guard mode == .enforceAppFocus else { return }
+        log("stopEnforceAppFocus() called")
 
         if let activationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
             self.activationObserver = nil
         }
+        mode = .off
+    }
+
+    // Legacy compatibility - maps to enforceAppFocus
+    func start() {
+        startEnforceAppFocus()
+    }
+
+    func stop() {
+        stopEnforceAppFocus()
+    }
+
+    // MARK: - Helper Methods
+
+    private func normalizedAppName(from app: NSRunningApplication) -> String {
+        // Use localizedName for human-readable, bundleIdentifier for consistency
+        return app.localizedName ?? app.bundleIdentifier ?? "Unknown"
     }
 
     private func scheduleActivate(reason: String) {
@@ -168,6 +354,112 @@ final class FocusEnforcer {
         log("activation calls issued")
         log("isActive after: \(NSApp.isActive)")
         log("keyWindow after: \(String(describing: NSApp.keyWindow))")
+    }
+}
+
+// MARK: - ActivityReviewer
+
+struct AppActivitySummary {
+    let appName: String
+    let activeMinutes: Int
+}
+
+struct ActivityReviewer {
+    private static func log(_ message: String) {
+        print("[ActivityReviewer] \(message)")
+    }
+
+    /// Calculates active minutes per app by joining app activations with active minutes.
+    /// Returns apps sorted by name for deterministic output.
+    static func calculateActivity(
+        appActivations: [AppActivationEvent],
+        activeMinutes: Set<Int>,
+        codingStartTime: Date
+    ) -> [AppActivitySummary] {
+        log("calculateActivity called")
+        log("  codingStartTime: \(codingStartTime)")
+        log("  activeMinutes: \(activeMinutes.sorted())")
+        log("  appActivations count: \(appActivations.count)")
+
+        for (i, event) in appActivations.enumerated() {
+            let offsetSeconds = event.timestamp.timeIntervalSince(codingStartTime)
+            log("  activation[\(i)]: \(event.appName) at offset \(String(format: "%.1f", offsetSeconds))s")
+        }
+
+        guard !appActivations.isEmpty else {
+            log("  No app activations, returning empty")
+            return []
+        }
+
+        // Build list of (app, minute) pairs
+        var appMinutePairs: [(app: String, minute: Int)] = []
+
+        for minute in activeMinutes.sorted() {
+            // Find the app that was active during this minute
+            // Look for the last activation that happened before the END of this minute
+            let minuteEndTime = codingStartTime.addingTimeInterval(Double(minute + 1) * 60)
+
+            var activeApp: String? = nil
+            for event in appActivations {
+                if event.timestamp <= minuteEndTime {
+                    activeApp = event.appName
+                } else {
+                    break
+                }
+            }
+
+            log("  minute \(minute): minuteEndTime offset=\(String(format: "%.1f", minuteEndTime.timeIntervalSince(codingStartTime)))s, activeApp=\(activeApp ?? "nil")")
+
+            if let app = activeApp {
+                appMinutePairs.append((app: app, minute: minute))
+            }
+        }
+
+        log("  appMinutePairs: \(appMinutePairs)")
+
+        // Group by app and count minutes
+        var appMinuteCounts: [String: Int] = [:]
+        for pair in appMinutePairs {
+            appMinuteCounts[pair.app, default: 0] += 1
+        }
+
+        log("  appMinuteCounts: \(appMinuteCounts)")
+
+        // Convert to array and sort by app name for deterministic output
+        let summaries = appMinuteCounts.map { AppActivitySummary(appName: $0.key, activeMinutes: $0.value) }
+        return summaries.sorted { $0.appName < $1.appName }
+    }
+
+    /// Prints the activity summary to stdout in the required format.
+    static func printSummary(
+        appActivations: [AppActivationEvent],
+        activeMinutes: Set<Int>,
+        codingStartTime: Date,
+        totalMinutes: Int
+    ) {
+        log("printSummary called with totalMinutes=\(totalMinutes)")
+
+        let summaries = calculateActivity(
+            appActivations: appActivations,
+            activeMinutes: activeMinutes,
+            codingStartTime: codingStartTime
+        )
+
+        let totalActiveMinutes = activeMinutes.count
+
+        print("active minutes: \(totalActiveMinutes) / total minutes: \(totalMinutes)")
+
+        // Sort by active minutes descending for output
+        let sortedByMinutes = summaries.sorted { $0.activeMinutes > $1.activeMinutes }
+
+        log("  sortedByMinutes count: \(sortedByMinutes.count)")
+        for summary in sortedByMinutes {
+            log("  summary: \(summary.appName) = \(summary.activeMinutes)")
+        }
+
+        for summary in sortedByMinutes where summary.activeMinutes > 0 {
+            print("* app [\(summary.appName)]: \(summary.activeMinutes) active minutes")
+        }
     }
 }
 
